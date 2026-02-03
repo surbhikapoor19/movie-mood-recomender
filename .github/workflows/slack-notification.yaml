@@ -35,43 +35,48 @@ jobs:
           FORMATTED=""
           while IFS=$'\t' read -r status file; do
             case $status in
-              A) FORMATTED="${FORMATTED}➕ ${file}\n" ;;
-              M) FORMATTED="${FORMATTED}📝 ${file}\n" ;;
-              D) FORMATTED="${FORMATTED}🗑️ ${file}\n" ;;
-              R*) FORMATTED="${FORMATTED}📛 ${file}\n" ;;
-              *) FORMATTED="${FORMATTED}• ${file}\n" ;;
+              A) FORMATTED="${FORMATTED}+ ${file}, " ;;
+              M) FORMATTED="${FORMATTED}~ ${file}, " ;;
+              D) FORMATTED="${FORMATTED}- ${file}, " ;;
+              R*) FORMATTED="${FORMATTED}> ${file}, " ;;
+              *) FORMATTED="${FORMATTED}${file}, " ;;
             esac
           done <<< "$FILES"
+          
+          # Remove trailing comma and space
+          FORMATTED="${FORMATTED%, }"
           
           # Count total files changed
           TOTAL=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | wc -l | tr -d ' ')
           
           # Add note if truncated
           if [ "$TOTAL" -gt 10 ]; then
-            FORMATTED="${FORMATTED}_...and $((TOTAL - 10)) more files_"
+            FORMATTED="${FORMATTED} ...and $((TOTAL - 10)) more"
           fi
           
           # Get stats (insertions/deletions)
           STATS=$(git diff --shortstat HEAD~1 HEAD 2>/dev/null | sed 's/^ //')
           
           # Escape for GitHub Actions output
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$FORMATTED" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "stats=$STATS" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "files=${FORMATTED}" >> $GITHUB_OUTPUT
+          echo "stats=${STATS}" >> $GITHUB_OUTPUT
+          echo "total=${TOTAL}" >> $GITHUB_OUTPUT
 
       - name: Send Slack notification for push
         uses: slackapi/slack-github-action@v1.26.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
-          payload: |
+          payload-file-path-resolved: false
+          payload: >
             {
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "🚀 New Commit Pushed",
+                    "text": "New Commit Pushed",
                     "emoji": true
                   }
                 },
@@ -84,7 +89,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Branch:*\n`${{ github.ref_name }}`"
+                      "text": "*Branch:*\n${{ github.ref_name }}"
                     }
                   ]
                 },
@@ -97,7 +102,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Commit:*\n`${{ github.sha }}`"
+                      "text": "*Commit:*\n${{ github.sha }}"
                     }
                   ]
                 },
@@ -105,7 +110,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Message:*\n${{ github.event.head_commit.message }}"
+                    "text": ${{ toJson(format('*Message:*\n{0}', github.event.head_commit.message)) }}
                   }
                 },
                 {
@@ -120,7 +125,7 @@ jobs:
                   "elements": [
                     {
                       "type": "mrkdwn",
-                      "text": "📊 ${{ steps.diff.outputs.stats }}"
+                      "text": "${{ steps.diff.outputs.stats }}"
                     }
                   ]
                 },
@@ -147,9 +152,6 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   notify-on-merge:
     # Only run if the PR was actually merged (not just closed)
@@ -170,17 +172,20 @@ jobs:
             
             let formatted = '';
             for (const file of files) {
-              let icon = '📝';
-              if (file.status === 'added') icon = '➕';
-              else if (file.status === 'removed') icon = '🗑️';
-              else if (file.status === 'renamed') icon = '📛';
+              let prefix = '~';
+              if (file.status === 'added') prefix = '+';
+              else if (file.status === 'removed') prefix = '-';
+              else if (file.status === 'renamed') prefix = '>';
               
-              formatted += `${icon} ${file.filename} (+${file.additions}/-${file.deletions})\\n`;
+              formatted += `${prefix} ${file.filename} (+${file.additions}/-${file.deletions}), `;
             }
+            
+            // Remove trailing comma and space
+            formatted = formatted.slice(0, -2);
             
             const totalFiles = context.payload.pull_request.changed_files;
             if (totalFiles > 10) {
-              formatted += `_...and ${totalFiles - 10} more files_`;
+              formatted += ` ...and ${totalFiles - 10} more`;
             }
             
             core.setOutput('files', formatted);
@@ -188,15 +193,18 @@ jobs:
 
       - name: Send Slack notification for PR merge
         uses: slackapi/slack-github-action@v1.26.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
-          payload: |
+          payload: >
             {
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "🎉 Pull Request Merged",
+                    "text": "Pull Request Merged",
                     "emoji": true
                   }
                 },
@@ -204,7 +212,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*<${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}>*"
+                    "text": ${{ toJson(format('*#{0} - {1}*', github.event.pull_request.number, github.event.pull_request.title)) }}
                   }
                 },
                 {
@@ -225,7 +233,7 @@ jobs:
                   "fields": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Branch:*\n`${{ github.event.pull_request.head.ref }}` → `${{ github.event.pull_request.base.ref }}`"
+                      "text": "*Branch:*\n${{ github.event.pull_request.head.ref }} -> ${{ github.event.pull_request.base.ref }}"
                     },
                     {
                       "type": "mrkdwn",
@@ -245,7 +253,7 @@ jobs:
                   "elements": [
                     {
                       "type": "mrkdwn",
-                      "text": "📊 +${{ github.event.pull_request.additions }} additions, -${{ github.event.pull_request.deletions }} deletions across ${{ github.event.pull_request.commits }} commit(s)"
+                      "text": "+${{ github.event.pull_request.additions }} additions, -${{ github.event.pull_request.deletions }} deletions across ${{ github.event.pull_request.commits }} commit(s)"
                     }
                   ]
                 },
@@ -272,9 +280,6 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   notify-on-workflow-complete:
     if: github.event_name == 'workflow_run'
@@ -282,15 +287,18 @@ jobs:
     steps:
       - name: Send Slack notification for workflow completion
         uses: slackapi/slack-github-action@v1.26.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
-          payload: |
+          payload: >
             {
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "${{ github.event.workflow_run.conclusion == 'success' && '✅' || '❌' }} ${{ github.event.workflow_run.name }} ${{ github.event.workflow_run.conclusion == 'success' && 'Succeeded' || 'Failed' }}",
+                    "text": "${{ github.event.workflow_run.name }} ${{ github.event.workflow_run.conclusion == 'success' && 'Succeeded' || 'Failed' }}",
                     "emoji": true
                   }
                 },
@@ -303,7 +311,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Branch:*\n`${{ github.event.workflow_run.head_branch }}`"
+                      "text": "*Branch:*\n${{ github.event.workflow_run.head_branch }}"
                     }
                   ]
                 },
@@ -335,6 +343,3 @@ jobs:
                 }
               ]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
