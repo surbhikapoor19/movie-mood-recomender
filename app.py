@@ -825,24 +825,52 @@ Your task:
 # ============================================================================
 # GRADIO UI
 # ============================================================================
-with gr.Blocks() as demo:
-    gr.Markdown("<h1>MOVIE RECOMMENDATION CHATBOT</h1>")
+
+# Build additional inputs for ChatInterface
+# Note: State components will be created inside Blocks and passed via render
+if LOCAL_MODEL:
+    # Local mode: no OAuth token needed
+    additional_inputs = [
+        gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
+        gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
+        gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
+        gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
+        gr.State(None),  # g_state - genre
+        gr.State(None),  # m_state - mood
+        gr.State(None),  # e_state - era
+        gr.State(None),  # v_state - viewing
+        gr.State(None),  # p_state - pace
+    ]
+else:
+    # API mode: OAuth token is automatically injected by Gradio
+    additional_inputs = [
+        gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
+        gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
+        gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
+        gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
+        gr.State(None),  # g_state - genre
+        gr.State(None),  # m_state - mood
+        gr.State(None),  # e_state - era
+        gr.State(None),  # v_state - viewing
+        gr.State(None),  # p_state - pace
+    ]
+
+# Define ChatInterface outside Blocks (following professor's pattern)
+chatbot = gr.ChatInterface(
+    fn=respond,
+    additional_inputs=additional_inputs,
+    type="messages",
+)
+
+with gr.Blocks(css=custom_css) as demo:
+    with gr.Row():
+        gr.Markdown("<h1>MOVIE RECOMMENDATION CHATBOT</h1>")
+        if not LOCAL_MODEL:
+            gr.LoginButton()
     
     # Show mode indicator
     mode_text = "Local Model" if LOCAL_MODEL else "HuggingFace API"
     gr.Markdown(f"_Running in {mode_text} mode_")
-
-    # Only show login button if using API mode
-    if not LOCAL_MODEL:
-        gr.LoginButton()
-
-    # State variables for user preferences
-    g_state = gr.State(None)
-    m_state = gr.State(None)
-    e_state = gr.State(None)
-    v_state = gr.State(None)
-    p_state = gr.State(None)
-    chat_history = gr.State([])
 
     # Preference Settings panel (above chatbot)
     with gr.Accordion("Preference Settings", open=True):
@@ -895,45 +923,8 @@ with gr.Blocks() as demo:
     # Status indicator for preferences (between settings and chatbot)
     o_status = gr.Markdown("Set your preferences above, then start chatting to get recommendations!")
 
-    # Build additional inputs based on mode
-    if LOCAL_MODEL:
-        # Local mode: no OAuth token needed
-        additional_inputs = [
-            gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
-            gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
-            gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
-            gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
-            g_state,
-            m_state,
-            e_state,
-            v_state,
-            p_state,
-        ]
-    else:
-        # API mode: OAuth token is automatically injected by Gradio
-        additional_inputs = [
-            gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
-            gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
-            gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
-            gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
-            g_state,
-            m_state,
-            e_state,
-            v_state,
-            p_state,
-        ]
-
-    # Chatbot interface (below preferences)
-    chatbot = gr.ChatInterface(
-        respond,
-        additional_inputs=additional_inputs,
-        chatbot=gr.Chatbot(
-            value=[],
-            render_markdown=True,
-            sanitize_html=False,  # Allow HTML for TMDB posters
-            height=450,
-        ),
-    )
+    # Render the chatbot interface
+    chatbot.render()
 
     # Functions to handle user selections
     def set_genre(g):
@@ -951,85 +942,44 @@ with gr.Blocks() as demo:
     def set_pace(p):
         return p, f"Pace selected: *{p}*"
 
-    def check_all_selections(g, m, e, v, p):
-        """Check if all questions are answered and generate status message"""
-        if all([g, m, e, v, p]):
-            initial_message = [
-                {
-                    "role": "assistant",
-                    "content": "Perfect! All preferences set. Start chatting to get movie recommendations!"
-                }
-            ]
-            status = "All set! Start chatting to get movie recommendations!"
-            return initial_message, status
-        else:
-            missing = []
-            if not g: missing.append("Genre")
-            if not m: missing.append("Mood")
-            if not e: missing.append("Era")
-            if not v: missing.append("Viewing Preference")
-            if not p: missing.append("Pace")
-            
-            status = f"Please complete: {', '.join(missing)}"
-            return [], status
+    # Get references to the state components in additional_inputs
+    g_state = additional_inputs[4]
+    m_state = additional_inputs[5]
+    e_state = additional_inputs[6]
+    v_state = additional_inputs[7]
+    p_state = additional_inputs[8]
 
-    # Event handlers for each question
+    # Event handlers for each question - update the state components
     g_radio.change(
         fn=set_genre,
         inputs=g_radio,
         outputs=[g_state, g_status],
-    ).then(
-        fn=check_all_selections,
-        inputs=[g_state, m_state, e_state, v_state, p_state],
-        outputs=[chat_history, o_status]
     )
 
     m_radio.change(
         fn=set_mood,
         inputs=m_radio,
         outputs=[m_state, m_status],
-    ).then(
-        fn=check_all_selections,
-        inputs=[g_state, m_state, e_state, v_state, p_state],
-        outputs=[chat_history, o_status]
     )
 
     e_radio.change(
         fn=set_era,
         inputs=e_radio,
         outputs=[e_state, e_status],
-    ).then(
-        fn=check_all_selections,
-        inputs=[g_state, m_state, e_state, v_state, p_state],
-        outputs=[chat_history, o_status]
     )
 
     v_radio.change(
         fn=set_viewing_pref,
         inputs=v_radio,
         outputs=[v_state, v_status],
-    ).then(
-        fn=check_all_selections,
-        inputs=[g_state, m_state, e_state, v_state, p_state],
-        outputs=[chat_history, o_status]
     )
 
     p_radio.change(
         fn=set_pace,
         inputs=p_radio,
         outputs=[p_state, p_status],
-    ).then(
-        fn=check_all_selections,
-        inputs=[g_state, m_state, e_state, v_state, p_state],
-        outputs=[chat_history, o_status]
     )
-
-    # Update chatbot with initial message
-    def update_chat(chat_messages):
-        return chat_messages
-    
-    chat_history.change(update_chat, chat_history, chatbot.chatbot)
 
 
 if __name__ == "__main__":
-    demo.launch(css=custom_css)
+    demo.launch()
