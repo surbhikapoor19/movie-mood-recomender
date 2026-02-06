@@ -3,7 +3,7 @@ Tests for appDraft.py — Movie Mood Recommender.
 
 Unit tests run without an API key.
 Integration tests (marked @pytest.mark.integration) call the real HF Inference
-API and require HUGGINGFACEHUB_API_TOKEN to be set.
+API and require HF_TOKEN to be set.
 """
 
 import json
@@ -136,15 +136,15 @@ class TestFormatRecommendation:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests (require HUGGINGFACEHUB_API_TOKEN)
+# Integration tests (require HF_TOKEN)
 # ---------------------------------------------------------------------------
 
 def _hf_token_available() -> bool:
-    return bool(os.getenv("HUGGINGFACEHUB_API_TOKEN"))
+    return bool(os.getenv("HF_TOKEN"))
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not _hf_token_available(), reason="HUGGINGFACEHUB_API_TOKEN not set")
+@pytest.mark.skipif(not _hf_token_available(), reason="HF_TOKEN not set")
 class TestCallLLM:
     """Call the real HF Inference API via call_llm and validate the raw output."""
 
@@ -160,7 +160,7 @@ class TestCallLLM:
             "open_ended": "I enjoyed The Grand Budapest Hotel.",
         }
         messages = build_messages(user_answers)
-        token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        token = os.getenv("HF_TOKEN")
 
         raw = call_llm(messages, token)
         data = json.loads(raw)
@@ -175,7 +175,7 @@ class TestCallLLM:
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not _hf_token_available(), reason="HUGGINGFACEHUB_API_TOKEN not set")
+@pytest.mark.skipif(not _hf_token_available(), reason="HF_TOKEN not set")
 class TestRecommendMovie:
     """End-to-end test through recommend_movie."""
 
