@@ -91,6 +91,44 @@ def build_messages(user_answers: dict) -> list[dict]:
 
 # ── Core recommendation logic ────────────────────────────────────────
 
+def call_llm(messages: list[dict], token: str) -> str:
+    """Send messages to the HF Inference API and return the raw response."""
+    client = InferenceClient(
+        provider="together",
+        token=token,
+        model="Qwen/Qwen2.5-7B-Instruct",
+    )
+    result = client.chat_completion(
+        messages,
+        max_tokens=256,
+        temperature=0.02,
+        top_p=0.95,
+    )
+    return result.choices[0].message.content
+
+
+def parse_recommendation(raw: str) -> dict | None:
+    """Parse the JSON model output. Returns the dict or None on failure."""
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def format_recommendation(data: dict) -> str:
+    """Turn a parsed recommendation dict into user-facing markdown."""
+    title = data.get("recommended_movie", "Unknown")
+    year = data.get("year", "")
+    why = data.get("why", "")
+    mentioned = data.get("user_mentioned_movies", [])
+
+    output = f"## {title} ({year})\n\n"
+    output += f"**Why:** {why}\n\n"
+    if mentioned:
+        output += f"*Based on your mention of: {', '.join(mentioned)}*"
+    return output
+
+
 def recommend_movie(
     mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended,
     hf_token: gr.OAuthToken = None,
@@ -118,37 +156,12 @@ def recommend_movie(
     }
 
     messages = build_messages(user_answers)
+    raw = call_llm(messages, token)
+    data = parse_recommendation(raw)
 
-    client = InferenceClient(
-        provider="together",
-        token=token,
-        model="Qwen/Qwen2.5-7B-Instruct",
-    )
-
-    result = client.chat_completion(
-        messages,
-        max_tokens=256,
-        temperature=0.02,
-        top_p=0.95,
-    )
-
-    raw = result.choices[0].message.content
-
-    # Try to parse the JSON response
-    try:
-        data = json.loads(raw)
-        title = data.get("recommended_movie", "Unknown")
-        year = data.get("year", "")
-        why = data.get("why", "")
-        mentioned = data.get("user_mentioned_movies", [])
-
-        output = f"## 🎬 {title} ({year})\n\n"
-        output += f"**Why:** {why}\n\n"
-        if mentioned:
-            output += f"*Based on your mention of: {', '.join(mentioned)}*"
-        return output
-    except json.JSONDecodeError:
-        return f"**Model response:**\n\n{raw}"
+    if data is not None:
+        return format_recommendation(data)
+    return f"**Model response:**\n\n{raw}"
 
 
 # ── Gradio UI ─────────────────────────────────────────────────────────
