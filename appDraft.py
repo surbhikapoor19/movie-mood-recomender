@@ -141,10 +141,10 @@ def recommend_movie(
     if hf_token is not None:
         token = hf_token.token
     else:
-        token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        token = os.getenv("HF_TOKEN")
 
     if not token:
-        raise gr.Error("No HuggingFace token found. Please log in or set HUGGINGFACEHUB_API_TOKEN in .env")
+        raise gr.Error("No HuggingFace token found. Please log in or set HF_TOKEN in .env")
 
     user_answers = {
         "mood": mood,
