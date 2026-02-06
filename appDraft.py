@@ -172,53 +172,58 @@ GENRE_CHOICES = [
     "Mystery", "Romance", "Sci-Fi", "Thriller", "Western",
 ]
 
-with gr.Blocks(title="Movie Mood Recommender") as demo:
-    gr.Markdown("# Movie Mood Recommender\n"
-                "Tell us how you're feeling and we'll find the perfect movie.")
 
-    with gr.Sidebar():
-        gr.LoginButton()
+def create_demo():
+    with gr.Blocks(title="Movie Mood Recommender") as demo:
+        gr.Markdown("# Movie Mood Recommender\n"
+                    "Tell us how you're feeling and we'll find the perfect movie.")
 
-    with gr.Row():
-        with gr.Column():
-            mood = gr.Textbox(
-                label="What mood are you in?",
-                placeholder="e.g. happy, sad, adventurous, scary, chill…",
-            )
-            genres = gr.CheckboxGroup(
-                choices=GENRE_CHOICES,
-                label="Pick one or more genres",
-            )
-            pace = gr.Radio(
-                choices=["slow", "medium", "fast"],
-                label="Preferred pace",
-                value="medium",
-            )
-            spectacle_vs_story = gr.Radio(
-                choices=["spectacle", "balanced", "story"],
-                label="Spectacle vs. Story",
-                value="balanced",
-            )
-            familiar_vs_new = gr.Radio(
-                choices=["familiar", "no preference", "new"],
-                label="Something familiar or something new?",
-                value="no preference",
-            )
-            open_ended = gr.Textbox(
-                label="Anything else? (optional)",
-                placeholder="Mention movies you like, themes, actors, etc.",
-                lines=3,
-            )
-            submit_btn = gr.Button("Get Recommendation", variant="primary")
+        with gr.Sidebar():
+            gr.LoginButton()
 
-        with gr.Column():
-            output = gr.Markdown(label="Your Recommendation")
+        with gr.Row():
+            with gr.Column():
+                mood = gr.Textbox(
+                    label="What mood are you in?",
+                    placeholder="e.g. happy, sad, adventurous, scary, chill…",
+                )
+                genres = gr.CheckboxGroup(
+                    choices=GENRE_CHOICES,
+                    label="Pick one or more genres",
+                )
+                pace = gr.Radio(
+                    choices=["slow", "medium", "fast"],
+                    label="Preferred pace",
+                    value="medium",
+                )
+                spectacle_vs_story = gr.Radio(
+                    choices=["spectacle", "balanced", "story"],
+                    label="Spectacle vs. Story",
+                    value="balanced",
+                )
+                familiar_vs_new = gr.Radio(
+                    choices=["familiar", "no preference", "new"],
+                    label="Something familiar or something new?",
+                    value="no preference",
+                )
+                open_ended = gr.Textbox(
+                    label="Anything else? (optional)",
+                    placeholder="Mention movies you like, themes, actors, etc.",
+                    lines=3,
+                )
+                submit_btn = gr.Button("Get Recommendation", variant="primary")
 
-    submit_btn.click(
-        fn=recommend_movie,
-        inputs=[mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended],
-        outputs=output,
-    )
+            with gr.Column():
+                output = gr.Markdown(label="Your Recommendation")
+
+        submit_btn.click(
+            fn=recommend_movie,
+            inputs=[mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended],
+            outputs=output,
+        )
+    return demo
+
 
 if __name__ == "__main__":
+    demo = create_demo()
     demo.launch()
