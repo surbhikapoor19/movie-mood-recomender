@@ -1,0 +1,42 @@
+{
+  "model": "openai/gpt-oss-120b",
+  "mode": "api",
+  "iterations_per_scenario": 5,
+  "total_runs": 25,
+  "summary": {
+    "avg_response_time_s": 1.904,
+    "median_response_time_s": 1.822,
+    "min_response_time_s": 1.264,
+    "max_response_time_s": 3.193,
+    "avg_prompt_tokens": 1158,
+    "avg_completion_tokens": 405,
+    "avg_total_tokens": 1562,
+    "parse_success_rate": 0.68
+  },
+  "per_scenario": {
+    "Horror fan - dark & intense": {
+      "avg_time": 1.8301211799999693,
+      "avg_prompt_tokens": 1156,
+      "avg_completion_tokens": 341.6,
+      "parse_success_rate": 1.0
+    },
+    "Family comedy night": {
+      "avg_time": 1.5816113200000472,
+      "avg_prompt_tokens": 1157,
+      "avg_completion_tokens": 308.4,
+      "parse_success_rate": 1.0
+    },
+    "Deep drama - solo viewing": {
+      "avg_time": 2.2125254399999905,
+      "avg_prompt_tokens": 1161,
+      "avg_completion_tokens": 478,
+      "parse_success_rate": 1.0
+    },
+    "Sci-fi suspense with friends": {
+      "avg_time": 2.0148618749999514,
+      "avg_prompt_tokens": 1156,
+      "avg_completion_tokens": 512,
+      "parse_success_rate": 0.4
+    }
+  }
+}
