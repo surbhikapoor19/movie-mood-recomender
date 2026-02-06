@@ -1,3 +1,5 @@
 venv
 token.txt
 .env
+.claude
+__pycache__
