@@ -157,6 +157,8 @@ jobs:
     # Only run if the PR was actually merged (not just closed)
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
       - name: Get PR files changed
         id: pr_files

@@ -926,7 +926,6 @@ with gr.Blocks() as demo:
     # Chatbot interface (below preferences)
     chatbot = gr.ChatInterface(
         respond,
-        type="messages",
         additional_inputs=additional_inputs,
         chatbot=gr.Chatbot(
             value=[],
