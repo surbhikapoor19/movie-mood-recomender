@@ -493,8 +493,11 @@ def filter_mentioned_movies(rec: dict, user_message: str) -> dict:
     return rec
 
 
-def format_recommendation(rec: dict, user_message: str = "") -> str:
-    """Format the recommendations as a nice response with TMDB posters and ratings."""
+def format_recommendation(rec: dict, user_message: str = ""):
+    """Format the recommendations as a nice response with TMDB posters and ratings.
+    
+    Returns gr.HTML for rich content (with TMDB) or plain string (without TMDB).
+    """
     if not rec:
         return "I couldn't generate proper recommendations. Please try again!"
     
@@ -518,6 +521,8 @@ def format_recommendation(rec: dict, user_message: str = "") -> str:
             why = movie.get("why", "")
             response += format_movie_card_with_tmdb(title, year, why, i)
         response += '<p style="font-size: 0.8em; color: #888;">Movie data from TMDB</p>'
+        # Return gr.HTML component for rich HTML rendering in chatbot
+        return gr.HTML(response)
     else:
         # Fallback to text-only format if no TMDB key
         response = "Here are my movie recommendations for you:\n\n"
@@ -856,10 +861,10 @@ else:
     ]
 
 # Define ChatInterface outside Blocks (following professor's pattern)
+# Note: 'type' parameter removed in Gradio 6.x - messages format is now default
 chatbot = gr.ChatInterface(
     fn=respond,
     additional_inputs=additional_inputs,
-    type="messages",
 )
 
 with gr.Blocks(css=custom_css) as demo:
