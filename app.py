@@ -1030,8 +1030,6 @@ with gr.Blocks() as demo:
     
     chat_history.change(update_chat, chat_history, chatbot.chatbot)
 
-    chatbot.render()
-
 
 if __name__ == "__main__":
     demo.launch(css=custom_css)
