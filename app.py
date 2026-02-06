@@ -24,7 +24,7 @@ LOCAL_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"  # Smaller model for local use (
 # LOCAL_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3"  # ~14GB
 
 # API model configuration
-API_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
+API_MODEL_NAME = "openai/gpt-oss-120b"
 
 # ============================================================================
 # TMDB API CONFIGURATION
