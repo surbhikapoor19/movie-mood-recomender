@@ -825,7 +825,7 @@ Your task:
 # ============================================================================
 # GRADIO UI
 # ============================================================================
-with gr.Blocks(css=custom_css) as demo:
+with gr.Blocks() as demo:
     gr.Markdown("<h1>MOVIE RECOMMENDATION CHATBOT</h1>")
     
     # Show mode indicator
@@ -929,7 +929,6 @@ with gr.Blocks(css=custom_css) as demo:
         type="messages",
         additional_inputs=additional_inputs,
         chatbot=gr.Chatbot(
-            type="messages",
             value=[],
             render_markdown=True,
             sanitize_html=False,  # Allow HTML for TMDB posters
@@ -1036,4 +1035,4 @@ with gr.Blocks(css=custom_css) as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css=custom_css)
