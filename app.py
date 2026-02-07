@@ -521,8 +521,7 @@ def format_recommendation(rec: dict, user_message: str = ""):
             why = movie.get("why", "")
             response += format_movie_card_with_tmdb(title, year, why, i)
         response += '<p style="font-size: 0.8em; color: #888;">Movie data from TMDB</p>'
-        # Return gr.HTML component for rich HTML rendering in chatbot
-        return gr.HTML(response)
+        return response
     else:
         # Fallback to text-only format if no TMDB key
         response = "Here are my movie recommendations for you:\n\n"
@@ -564,35 +563,6 @@ def run_local_model(messages: list[dict], max_tokens: int, temperature: float) -
         return f"Error generating response: {str(e)}"
 
 
-def run_local_model_streaming(messages: list[dict], max_tokens: int, temperature: float):
-    """Run inference using the local transformers pipeline with simulated streaming."""
-    try:
-        print(f"[INFO] Starting local model streaming inference...")
-        print(f"[INFO] Parameters: max_tokens={max_tokens}, temperature={temperature}")
-        
-        # Local pipeline doesn't support true streaming, so we run and yield in chunks
-        print(f"[INFO] Running inference on {LOCAL_MODEL_NAME}...")
-        result = local_pipeline(
-            messages,
-            max_new_tokens=max_tokens,
-            do_sample=True,
-            temperature=max(temperature, 0.01),
-        )
-        print(f"[INFO] Inference complete, streaming response...")
-        
-        raw_content = result[0]["generated_text"][-1]["content"]
-        print(f"[INFO] Response generated ({len(raw_content)} characters), streaming to UI...")
-        
-        # Simulate streaming by yielding character by character (or in chunks)
-        chunk_size = 5
-        for i in range(0, len(raw_content), chunk_size):
-            yield raw_content[:i + chunk_size]
-        print(f"[INFO] Streaming complete")
-    except Exception as e:
-        print(f"[ERROR] Local model streaming failed: {e}")
-        yield f"Error generating response: {str(e)}"
-
-
 # ============================================================================
 # API MODEL INFERENCE
 # ============================================================================
@@ -624,6 +594,106 @@ def run_api_model(messages: list[dict], max_tokens: int, temperature: float, top
 # ============================================================================
 # CHAT RESPONSE FUNCTION
 # ============================================================================
+
+RECOMMENDATION_KEYWORDS = ["recommend", "suggest", "movie", "watch", "looking for", "i like", "want to see", "what should", "recommendations"]
+
+def build_conversational_context(genre, mood, era, viewing_pref, pace):
+    """Build the system prompt for conversational mode."""
+    return f"""You are a knowledgeable and friendly movie recommendation assistant.
+
+User's Movie Preferences:
+- Favorite Genre: {genre or 'Not specified'}
+- Preferred Mood: {mood or 'Not specified'}
+- Era Preference: {era or 'Not specified'}
+- Viewing Context: {viewing_pref or 'Not specified'}
+- Preferred Pace: {pace or 'Not specified'}
+
+Your task:
+1. If they ask for recommendations, suggest 3-5 specific movie titles with brief descriptions
+2. Explain why each movie fits their preferences
+3. Be enthusiastic and conversational
+4. If they ask follow-up questions, continue to tailor recommendations to their stated preferences
+5. If preferences are not fully specified, ask clarifying questions"""
+
+def process_structured_response(response, message):
+    """Process LLM response in structured recommendation mode."""
+    print(f"[INFO] Step 6: Cleaning model output...")
+    cleaned = clean_output(response)
+    
+    print(f"[INFO] Step 7: Parsing JSON recommendation...")
+    rec = parse_recommendation(cleaned)
+    
+    if rec:
+        print(f"[INFO] Step 8: Successfully parsed {len(rec.get('recommendations', []))} recommendations")
+        print(f"[INFO] Step 9: Filtering mentioned movies and fetching TMDB data...")
+        formatted = format_recommendation(rec, message)
+        print(f"[INFO] Step 10: Response ready, sending to UI")
+        return formatted
+    else:
+        print(f"[WARN] Step 8: Failed to parse JSON, returning raw response")
+        return f"Here's my recommendation based on your preferences:\n\n{cleaned}"
+
+def process_conversational_response(response):
+    """Process conversational LLM response, extracting movie titles for TMDB enrichment."""
+    print(f"[INFO] Processing conversational response for TMDB enrichment...")
+    
+    # Try to extract movie titles from the response using common patterns
+    # Pattern: "Movie Title (Year)" or "**Movie Title** (Year)" or numbered lists
+    patterns = [
+        r'\*\*([^*]+)\*\*\s*\((\d{4})\)',  # **Title** (Year)
+        r'\d+\.\s*\*\*([^*]+)\*\*',  # 1. **Title**
+        r'\d+\.\s*([^(:\n]+)\s*\((\d{4})\)',  # 1. Title (Year)
+        r'"([^"]+)"\s*\((\d{4})\)',  # "Title" (Year)
+    ]
+    
+    movies_found = []
+    for pattern in patterns:
+        matches = re.findall(pattern, response)
+        for match in matches:
+            if isinstance(match, tuple):
+                title = match[0].strip()
+                year = int(match[1]) if len(match) > 1 and match[1].isdigit() else None
+            else:
+                title = match.strip()
+                year = None
+            if title and len(title) > 2 and title not in [m['title'] for m in movies_found]:
+                movies_found.append({'title': title, 'year': year})
+    
+    if not movies_found:
+        print(f"[INFO] No movie titles extracted, returning original response")
+        return response
+    
+    print(f"[INFO] Extracted {len(movies_found)} movie titles: {[m['title'] for m in movies_found]}")
+    
+    # Check if TMDB is available
+    if not get_tmdb_api_key():
+        print(f"[INFO] No TMDB API key, returning original response")
+        return response
+    
+    # Build enhanced response with TMDB cards
+    enhanced = "<h2>Movie Recommendations</h2>\n"
+    for i, movie in enumerate(movies_found[:5], 1):  # Limit to 5 movies
+        enhanced += format_movie_card_with_tmdb(movie['title'], movie.get('year'), "", i)
+    enhanced += '<p style="font-size: 0.8em; color: #888;">Movie data from TMDB</p>'
+    
+    return enhanced
+
+def prepare_request(message, genre, mood, era, viewing_pref, pace):
+    """Prepare user answers and determine request type."""
+    user_answers = {
+        "mood": mood or "Any",
+        "genres": [genre] if genre else ["Any"],
+        "pace": pace or "Balanced",
+        "viewing_context": viewing_pref or "Any",
+        "era": era or "Any Era",
+        "open_ended": message
+    }
+    
+    is_recommendation_request = any(kw in message.lower() for kw in RECOMMENDATION_KEYWORDS)
+    all_preferences_set = all([genre, mood, era, viewing_pref])
+    
+    return user_answers, is_recommendation_request, all_preferences_set
+
 if LOCAL_MODEL:
     def respond(
         message,
@@ -643,80 +713,34 @@ if LOCAL_MODEL:
         print(f"[INFO] User message: {message[:100]}..." if len(message) > 100 else f"[INFO] User message: {message}")
         print(f"[INFO] Preferences - Genre: {genre}, Mood: {mood}, Era: {era}, Viewing: {viewing_pref}, Pace: {pace}")
         
-        token = None  # Not needed for local model
-        
-        # Build user preferences
         print(f"[INFO] Step 1: Building user preferences...")
-        user_answers = {
-            "mood": mood or "Any",
-            "genres": [genre] if genre else ["Any"],
-            "pace": pace or "Balanced",
-            "viewing_context": viewing_pref or "Any",
-            "era": era or "Any Era",
-            "open_ended": message
-        }
-        
-        # Check if user is asking for recommendations
-        recommendation_keywords = ["recommend", "suggest", "movie", "watch", "looking for", "i like", "want to see", "what should", "recommendations"]
-        is_recommendation_request = any(kw in message.lower() for kw in recommendation_keywords)
+        user_answers, is_recommendation_request, all_preferences_set = prepare_request(
+            message, genre, mood, era, viewing_pref, pace
+        )
         print(f"[INFO] Step 2: Detected recommendation request: {is_recommendation_request}")
-        print(f"[INFO] All preferences set: {all([genre, mood, era, viewing_pref])}")
+        print(f"[INFO] All preferences set: {all_preferences_set}")
         
-        if is_recommendation_request and all([genre, mood, era, viewing_pref]):
+        if is_recommendation_request and all_preferences_set:
             print(f"[INFO] Step 3: Using STRUCTURED recommendation mode")
-            # Use structured recommendation approach
             print(f"[INFO] Step 4: Building few-shot prompt with examples...")
             messages = build_messages(user_answers)
             print(f"[INFO] Prompt built with {len(messages)} messages")
             
-            # Local model inference
             print(f"[INFO] Step 5: Running LLM inference...")
             response = run_local_model(messages, max_tokens, temperature)
-            
-            print(f"[INFO] Step 6: Cleaning model output...")
-            cleaned = clean_output(response)
-            
-            print(f"[INFO] Step 7: Parsing JSON recommendation...")
-            rec = parse_recommendation(cleaned)
-            
-            if rec:
-                print(f"[INFO] Step 8: Successfully parsed {len(rec.get('recommendations', []))} recommendations")
-                print(f"[INFO] Step 9: Filtering mentioned movies and fetching TMDB data...")
-                formatted = format_recommendation(rec, message)
-                print(f"[INFO] Step 10: Response ready, sending to UI")
-                yield formatted
-            else:
-                print(f"[WARN] Step 8: Failed to parse JSON, returning raw response")
-                yield f"Here's my recommendation based on your preferences:\n\n{cleaned}"
+            yield process_structured_response(response, message)
         else:
             print(f"[INFO] Step 3: Using CONVERSATIONAL mode")
-            # General conversation mode with preferences context
-            preferences_context = f"""You are a knowledgeable and friendly movie recommendation assistant.
-
-User's Movie Preferences:
-- Favorite Genre: {genre or 'Not specified'}
-- Preferred Mood: {mood or 'Not specified'}
-- Era Preference: {era or 'Not specified'}
-- Viewing Context: {viewing_pref or 'Not specified'}
-- Preferred Pace: {pace or 'Not specified'}
-
-Your task:
-1. If they ask for recommendations, suggest 3-5 specific movie titles with brief descriptions
-2. Explain why each movie fits their preferences
-3. Be enthusiastic and conversational
-4. If they ask follow-up questions, continue to tailor recommendations to their stated preferences
-5. If preferences are not fully specified, ask clarifying questions"""
-
             print(f"[INFO] Step 4: Building conversation context...")
-            messages = [{"role": "system", "content": preferences_context}]
+            messages = [{"role": "system", "content": build_conversational_context(genre, mood, era, viewing_pref, pace)}]
             messages.extend(history)
             messages.append({"role": "user", "content": message})
             print(f"[INFO] Context built with {len(messages)} messages (including {len(history)} history)")
 
-            # Local model with simulated streaming
-            print(f"[INFO] Step 5: Running LLM inference with streaming...")
-            for partial in run_local_model_streaming(messages, max_tokens, temperature):
-                yield partial
+            print(f"[INFO] Step 5: Running LLM inference...")
+            response = run_local_model(messages, max_tokens, temperature)
+            print(f"[INFO] Step 6: Processing conversational response...")
+            yield process_conversational_response(response)
         
         print(f"[INFO] Request complete")
         print(f"{'='*60}\n")
@@ -740,7 +764,6 @@ else:
         print(f"[INFO] User message: {message[:100]}..." if len(message) > 100 else f"[INFO] User message: {message}")
         print(f"[INFO] Preferences - Genre: {genre}, Mood: {mood}, Era: {era}, Viewing: {viewing_pref}, Pace: {pace}")
         
-        # Check for authentication
         if hf_token is None or not getattr(hf_token, "token", None):
             print(f"[WARN] No HuggingFace token provided")
             yield "Please log in with your Hugging Face account first."
@@ -748,80 +771,38 @@ else:
         token = hf_token.token
         print(f"[INFO] HuggingFace token verified")
         
-        # Build user preferences
         print(f"[INFO] Step 1: Building user preferences...")
-        user_answers = {
-            "mood": mood or "Any",
-            "genres": [genre] if genre else ["Any"],
-            "pace": pace or "Balanced",
-            "viewing_context": viewing_pref or "Any",
-            "era": era or "Any Era",
-            "open_ended": message
-        }
-        
-        # Check if user is asking for recommendations
-        recommendation_keywords = ["recommend", "suggest", "movie", "watch", "looking for", "want to see", "what should"]
-        is_recommendation_request = any(kw in message.lower() for kw in recommendation_keywords)
+        user_answers, is_recommendation_request, all_preferences_set = prepare_request(
+            message, genre, mood, era, viewing_pref, pace
+        )
         print(f"[INFO] Step 2: Detected recommendation request: {is_recommendation_request}")
-        print(f"[INFO] All preferences set: {all([genre, mood, era, viewing_pref])}")
+        print(f"[INFO] All preferences set: {all_preferences_set}")
         
-        if is_recommendation_request and all([genre, mood, era, viewing_pref]):
+        if is_recommendation_request and all_preferences_set:
             print(f"[INFO] Step 3: Using STRUCTURED recommendation mode")
-            # Use structured recommendation approach
             print(f"[INFO] Step 4: Building few-shot prompt with examples...")
             messages = build_messages(user_answers)
             print(f"[INFO] Prompt built with {len(messages)} messages")
             
-            # API model inference
             print(f"[INFO] Step 5: Running LLM inference via API...")
             response = ""
-            for partial in run_api_model(messages, max_tokens, 0.3, top_p, token):
+            for partial in run_api_model(messages, max_tokens, temperature, top_p, token):
                 response = partial
-            
-            print(f"[INFO] Step 6: Cleaning model output...")
-            cleaned = clean_output(response)
-            
-            print(f"[INFO] Step 7: Parsing JSON recommendation...")
-            rec = parse_recommendation(cleaned)
-            
-            if rec:
-                print(f"[INFO] Step 8: Successfully parsed {len(rec.get('recommendations', []))} recommendations")
-                print(f"[INFO] Step 9: Filtering mentioned movies and fetching TMDB data...")
-                formatted = format_recommendation(rec, message)
-                print(f"[INFO] Step 10: Response ready, sending to UI")
-                yield formatted
-            else:
-                print(f"[WARN] Step 8: Failed to parse JSON, returning raw response")
-                yield f"Here's my recommendation based on your preferences:\n\n{cleaned}"
+            yield process_structured_response(response, message)
         else:
             print(f"[INFO] Step 3: Using CONVERSATIONAL mode")
-            # General conversation mode with preferences context
-            preferences_context = f"""You are a knowledgeable and friendly movie recommendation assistant.
-
-User's Movie Preferences:
-- Favorite Genre: {genre or 'Not specified'}
-- Preferred Mood: {mood or 'Not specified'}
-- Era Preference: {era or 'Not specified'}
-- Viewing Context: {viewing_pref or 'Not specified'}
-- Preferred Pace: {pace or 'Not specified'}
-
-Your task:
-1. If they ask for recommendations, suggest 3-5 specific movie titles with brief descriptions
-2. Explain why each movie fits their preferences
-3. Be enthusiastic and conversational
-4. If they ask follow-up questions, continue to tailor recommendations to their stated preferences
-5. If preferences are not fully specified, ask clarifying questions"""
-
             print(f"[INFO] Step 4: Building conversation context...")
-            messages = [{"role": "system", "content": preferences_context}]
+            messages = [{"role": "system", "content": build_conversational_context(genre, mood, era, viewing_pref, pace)}]
             messages.extend(history)
             messages.append({"role": "user", "content": message})
             print(f"[INFO] Context built with {len(messages)} messages (including {len(history)} history)")
 
-            # API model with real streaming
-            print(f"[INFO] Step 5: Running LLM inference with streaming...")
+            print(f"[INFO] Step 5: Running LLM inference via API...")
+            response = ""
             for partial in run_api_model(messages, max_tokens, temperature, top_p, token):
-                yield partial
+                response = partial
+            print(f"[INFO] Step 6: Processing conversational response...")
+            yield process_conversational_response(response)
         
         print(f"[INFO] Request complete")
         print(f"{'='*60}\n")
@@ -831,59 +812,27 @@ Your task:
 # GRADIO UI
 # ============================================================================
 
-# Build additional inputs for ChatInterface
-# Note: State components will be created inside Blocks and passed via render
-if LOCAL_MODEL:
-    # Local mode: no OAuth token needed
-    additional_inputs = [
-        gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
-        gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
-        gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
-        gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
-        gr.State(None),  # g_state - genre
-        gr.State(None),  # m_state - mood
-        gr.State(None),  # e_state - era
-        gr.State(None),  # v_state - viewing
-        gr.State(None),  # p_state - pace
-    ]
-else:
-    # API mode: OAuth token is automatically injected by Gradio
-    additional_inputs = [
-        gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", visible=False),
-        gr.Slider(1, 2048, 512, step=1, label="Max new tokens", visible=False),
-        gr.Slider(0.1, 4.0, 0.3, step=0.1, label="Temperature", visible=False),
-        gr.Slider(0.1, 1.0, 0.95, step=0.05, label="Top-p", visible=False),
-        gr.State(None),  # g_state - genre
-        gr.State(None),  # m_state - mood
-        gr.State(None),  # e_state - era
-        gr.State(None),  # v_state - viewing
-        gr.State(None),  # p_state - pace
-    ]
-
-# Define ChatInterface outside Blocks (following professor's pattern)
-# Note: 'type' parameter removed in Gradio 6.x - messages format is now default
-chatbot = gr.ChatInterface(
-    fn=respond,
-    additional_inputs=additional_inputs,
-)
-
 with gr.Blocks(css=custom_css) as demo:
+    # State components for preferences (must be inside Blocks)
+    g_state = gr.State(None)
+    m_state = gr.State(None)
+    e_state = gr.State(None)
+    v_state = gr.State(None)
+    p_state = gr.State(None)
+
     with gr.Row():
         gr.Markdown("<h1>MOVIE RECOMMENDATION CHATBOT</h1>")
         if not LOCAL_MODEL:
             gr.LoginButton()
     
-    # Show mode indicator
     mode_text = "Local Model" if LOCAL_MODEL else "HuggingFace API"
     gr.Markdown(f"_Running in {mode_text} mode_")
 
-    # Preference Settings panel (above chatbot)
     with gr.Accordion("Preference Settings", open=True):
         gr.Markdown("*Set your movie preferences to get personalized recommendations*")
         
         with gr.Row():
             with gr.Column():
-                # Genre selection
                 g_radio = gr.Radio(
                     choices=GENRES,
                     label="What is your favourite genre?",
@@ -891,7 +840,6 @@ with gr.Blocks(css=custom_css) as demo:
                 )
                 g_status = gr.Markdown()
 
-                # Mood selection
                 m_radio = gr.Radio(
                     choices=MOODS,
                     label="What mood are you in?",
@@ -900,7 +848,6 @@ with gr.Blocks(css=custom_css) as demo:
                 m_status = gr.Markdown()
 
             with gr.Column():
-                # Era selection
                 e_radio = gr.Radio(
                     choices=ERAS,
                     label="Which era of movies do you prefer?",
@@ -908,7 +855,6 @@ with gr.Blocks(css=custom_css) as demo:
                 )
                 e_status = gr.Markdown()
 
-                # Viewing context selection
                 v_radio = gr.Radio(
                     choices=VIEWING_CONTEXTS,
                     label="What is your viewing context?",
@@ -917,7 +863,6 @@ with gr.Blocks(css=custom_css) as demo:
                 v_status = gr.Markdown()
 
             with gr.Column():
-                # Pace selection
                 p_radio = gr.Radio(
                     choices=PACE_OPTIONS,
                     label="Do you prefer fast-paced or slower movies?",
@@ -925,13 +870,31 @@ with gr.Blocks(css=custom_css) as demo:
                 )
                 p_status = gr.Markdown()
 
-    # Status indicator for preferences (between settings and chatbot)
     o_status = gr.Markdown("Set your preferences above, then start chatting to get recommendations!")
 
-    # Render the chatbot interface
-    chatbot.render()
+    system_tb = gr.Textbox(value="You are a friendly movie recommendation chatbot.", label="System message", render=False)
+    max_tokens_sl = gr.Slider(minimum=1, maximum=2048, value=512, step=1, label="Max new tokens", render=False)
+    temp_sl = gr.Slider(minimum=0.1, maximum=4.0, value=0.3, step=0.1, label="Temperature", render=False)
+    top_p_sl = gr.Slider(minimum=0.1, maximum=1.0, value=0.95, step=0.05, label="Top-p (nucleus sampling)", render=False)
 
-    # Functions to handle user selections
+    additional_inputs = [
+        system_tb,
+        max_tokens_sl,
+        temp_sl,
+        top_p_sl,
+        g_state,
+        m_state,
+        e_state,
+        v_state,
+        p_state,
+    ]
+
+    gr.ChatInterface(
+        fn=respond,
+        additional_inputs=additional_inputs,
+        chatbot=gr.Chatbot(render_markdown=True, sanitize_html=False),
+    )
+
     def set_genre(g):
         return g, f"Genre selected: *{g}*"
 
@@ -947,43 +910,11 @@ with gr.Blocks(css=custom_css) as demo:
     def set_pace(p):
         return p, f"Pace selected: *{p}*"
 
-    # Get references to the state components in additional_inputs
-    g_state = additional_inputs[4]
-    m_state = additional_inputs[5]
-    e_state = additional_inputs[6]
-    v_state = additional_inputs[7]
-    p_state = additional_inputs[8]
-
-    # Event handlers for each question - update the state components
-    g_radio.change(
-        fn=set_genre,
-        inputs=g_radio,
-        outputs=[g_state, g_status],
-    )
-
-    m_radio.change(
-        fn=set_mood,
-        inputs=m_radio,
-        outputs=[m_state, m_status],
-    )
-
-    e_radio.change(
-        fn=set_era,
-        inputs=e_radio,
-        outputs=[e_state, e_status],
-    )
-
-    v_radio.change(
-        fn=set_viewing_pref,
-        inputs=v_radio,
-        outputs=[v_state, v_status],
-    )
-
-    p_radio.change(
-        fn=set_pace,
-        inputs=p_radio,
-        outputs=[p_state, p_status],
-    )
+    g_radio.change(fn=set_genre, inputs=g_radio, outputs=[g_state, g_status])
+    m_radio.change(fn=set_mood, inputs=m_radio, outputs=[m_state, m_status])
+    e_radio.change(fn=set_era, inputs=e_radio, outputs=[e_state, e_status])
+    v_radio.change(fn=set_viewing_pref, inputs=v_radio, outputs=[v_state, v_status])
+    p_radio.change(fn=set_pace, inputs=p_radio, outputs=[p_state, p_status])
 
 
 if __name__ == "__main__":
