@@ -542,19 +542,21 @@ def run_local_model(messages: list[dict], max_tokens: int, temperature: float) -
     """Run inference using the local transformers pipeline."""
     try:
         print(f"[INFO] Starting local model inference...")
-        print(f"[INFO] Parameters: max_tokens={max_tokens}, temperature={temperature}")
+        # Cap max_tokens at 256 for local model to prevent long generation times
+        effective_max_tokens = min(max_tokens, 256)
+        print(f"[INFO] Parameters: max_tokens={effective_max_tokens} (capped from {max_tokens}), temperature={temperature}")
         print(f"[INFO] Number of messages in context: {len(messages)}")
         
         print(f"[INFO] Running inference on {LOCAL_MODEL_NAME}...")
         result = local_pipeline(
             messages,
-            max_new_tokens=max_tokens,
+            max_new_tokens=effective_max_tokens,
             do_sample=True,
-            temperature=max(temperature, 0.01),  # Avoid temperature=0 issues
+            temperature=max(temperature, 0.01), # as deterministic- too small a model let be creative
+            pad_token_id=local_pipeline.tokenizer.eos_token_id,
         )
         print(f"[INFO] Inference complete, extracting response...")
         
-        # Extract the assistant's response from the pipeline output
         raw_content = result[0]["generated_text"][-1]["content"]
         print(f"[INFO] Response generated ({len(raw_content)} characters)")
         return raw_content
@@ -599,21 +601,20 @@ RECOMMENDATION_KEYWORDS = ["recommend", "suggest", "movie", "watch", "looking fo
 
 def build_conversational_context(genre, mood, era, viewing_pref, pace):
     """Build the system prompt for conversational mode."""
-    return f"""You are a knowledgeable and friendly movie recommendation assistant.
+    return f"""You are a movie recommendation assistant. Be concise and helpful.
 
-User's Movie Preferences:
-- Favorite Genre: {genre or 'Not specified'}
-- Preferred Mood: {mood or 'Not specified'}
-- Era Preference: {era or 'Not specified'}
-- Viewing Context: {viewing_pref or 'Not specified'}
-- Preferred Pace: {pace or 'Not specified'}
+User's Preferences:
+- Genre: {genre or 'Not specified'}
+- Mood: {mood or 'Not specified'}
+- Era: {era or 'Not specified'}
+- Context: {viewing_pref or 'Not specified'}
+- Pace: {pace or 'Not specified'}
 
-Your task:
-1. If they ask for recommendations, suggest 3-5 specific movie titles with brief descriptions
-2. Explain why each movie fits their preferences
-3. Be enthusiastic and conversational
-4. If they ask follow-up questions, continue to tailor recommendations to their stated preferences
-5. If preferences are not fully specified, ask clarifying questions"""
+Rules:
+1. Suggest 3-5 movies with format: **Title** (Year) - one sentence why
+2. Keep responses under 200 words
+3. If preferences are missing, ask ONE clarifying question
+4. Do not repeat yourself or ramble"""
 
 def process_structured_response(response, message):
     """Process LLM response in structured recommendation mode."""
@@ -636,7 +637,7 @@ def process_structured_response(response, message):
 def process_conversational_response(response):
     """Process conversational LLM response, extracting movie titles for TMDB enrichment."""
     print(f"[INFO] Processing conversational response for TMDB enrichment...")
-    
+    print(f"[INFO] Rsponses:  {response}")
     # Try to extract movie titles from the response using common patterns
     # Pattern: "Movie Title (Year)" or "**Movie Title** (Year)" or numbered lists
     patterns = [
