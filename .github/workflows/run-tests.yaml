@@ -1,11 +1,10 @@
 name: Run Unit Tests
 
-## when a push is made to unit Test branch (update this later to be main), run out unit tests.
-## Ideally this is on a pullrequest to main
-on: 
-  push:
+## Run unit tests when a pull request is made to main
+on:
+  pull_request:
     branches:
-      - unitTests
+      - main
 
 jobs:
   build:
