@@ -1,0 +1,16 @@
+name: Run Unit Tests
+
+## when a push is made to unit Test branch (update this later to be main), run out unit tests.
+## Ideally this is on a pullrequest to main
+on: 
+  push:
+    branches:
+      - unitTests
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      name: Test step.
+      run: echo "Made it to the test step!" 
