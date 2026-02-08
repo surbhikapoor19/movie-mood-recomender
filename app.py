@@ -117,16 +117,16 @@ def format_movie_card_with_tmdb(title: str, year: int, why: str, index: int) -> 
         
         # Format the card with poster
         card = f"""
-<div style="display: flex; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-{poster_html}
-<div style="flex: 1;">
-<h3 style="margin: 0 0 5px 0; color: #333;">{index}. {tmdb_title} ({tmdb_year})</h3>
-<p style="margin: 5px 0;"><strong>Rating:</strong> {rating:.1f}/10</p>
-<p style="margin: 5px 0;"><em>{why}</em></p>
-<p style="margin: 5px 0; color: #666; font-size: 0.9em;">{overview}</p>
-</div>
-</div>
-"""
+                <div style="display: flex; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    {poster_html}
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0 0 5px 0; color: #333;">{index}. {tmdb_title} ({tmdb_year})</h3>
+                        <p style="margin: 5px 0;"><strong>Rating:</strong> {rating:.1f}/10</p>
+                        <p style="margin: 5px 0;"><em>{why}</em></p>
+                        <p style="margin: 5px 0; color: #666; font-size: 0.9em;">{overview}</p>
+                    </div>
+                </div>
+                """ 
         return card
     else:
         # Fallback without TMDB data - styled similarly to TMDB card
@@ -137,15 +137,15 @@ def format_movie_card_with_tmdb(title: str, year: int, why: str, index: int) -> 
         year_display = f" ({year})" if year else ""
         
         return f"""
-<div style="display: flex; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-{placeholder_html}
-<div style="flex: 1;">
-<h3 style="margin: 0 0 5px 0; color: #333;">{index}. {title}{year_display}</h3>
-<p style="margin: 5px 0; color: #888;"><em>Movie details not available from TMDB</em></p>
-<p style="margin: 5px 0;"><em>{why}</em></p>
-</div>
-</div>
-"""
+                <div style="display: flex; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                {placeholder_html}
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0 0 5px 0; color: #333;">{index}. {title}{year_display}</h3>
+                        <p style="margin: 5px 0; color: #888;"><em>Movie details not available from TMDB</em></p>
+                        <p style="margin: 5px 0;"><em>{why}</em></p>
+                    </div>
+                </div>
+                """
 
 # ============================================================================
 # MODEL INITIALIZATION
@@ -174,7 +174,6 @@ if LOCAL_MODEL:
 
 if not LOCAL_MODEL:
     print("[MODE] Using HuggingFace Inference API")
-    from huggingface_hub import InferenceClient
     from huggingface_hub import InferenceClient
 
 # ============================================================================
@@ -601,20 +600,21 @@ RECOMMENDATION_KEYWORDS = ["recommend", "suggest", "movie", "watch", "looking fo
 
 def build_conversational_context(genre, mood, era, viewing_pref, pace):
     """Build the system prompt for conversational mode."""
-    return f"""You are a movie recommendation assistant. Be concise and helpful.
+    return f"""
+            You are a movie recommendation assistant. Be concise and helpful.
 
-User's Preferences:
-- Genre: {genre or 'Not specified'}
-- Mood: {mood or 'Not specified'}
-- Era: {era or 'Not specified'}
-- Context: {viewing_pref or 'Not specified'}
-- Pace: {pace or 'Not specified'}
+            User's Preferences:
+            - Genre: {genre or 'Not specified'}
+            - Mood: {mood or 'Not specified'}
+            - Era: {era or 'Not specified'}
+            - Context: {viewing_pref or 'Not specified'}
+            - Pace: {pace or 'Not specified'}
 
-Rules:
-1. Suggest 3-5 movies with format: **Title** (Year) - one sentence why
-2. Keep responses under 200 words
-3. If preferences are missing, ask ONE clarifying question
-4. Do not repeat yourself or ramble"""
+            Rules:
+            1. Suggest 3-5 movies with format: **Title** (Year) - one sentence why
+            2. Keep responses under 200 words
+            3. If preferences are missing, ask ONE clarifying question
+            4. Do not repeat yourself or ramble"""
 
 def process_structured_response(response, message):
     """Process LLM response in structured recommendation mode."""
