@@ -1,0 +1,21 @@
+name: Run Unit Tests
+
+## Run unit tests when a pull request is made to main
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout working branch
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run pytests
+      run: pytest -sv
