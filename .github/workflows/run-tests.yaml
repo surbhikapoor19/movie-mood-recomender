@@ -12,5 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      name: Test step.
+    - name: Checkout?
+      uses: actions/checkout@v4
+
+    - name: Test step.
       run: echo "Made it to the test step!" 
