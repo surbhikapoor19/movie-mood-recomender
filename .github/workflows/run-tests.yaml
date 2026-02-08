@@ -12,8 +12,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout?
+    - name: Checkout working branch
       uses: actions/checkout@v4
 
-    - name: Test step.
-      run: echo "Made it to the test step!" 
+    - name: Install Dependencies
+      run: pip install -r requirements.txt
+
+    - name: Sanity Check
+      run: echo "Made it!"
