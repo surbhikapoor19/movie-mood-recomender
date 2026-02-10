@@ -91,6 +91,44 @@ def build_messages(user_answers: dict) -> list[dict]:
 
 # ── Core recommendation logic ────────────────────────────────────────
 
+def call_llm(messages: list[dict], token: str) -> str:
+    """Send messages to the HF Inference API and return the raw response."""
+    client = InferenceClient(
+        provider="together",
+        token=token,
+        model="Qwen/Qwen2.5-7B-Instruct",
+    )
+    result = client.chat_completion(
+        messages,
+        max_tokens=256,
+        temperature=0.02,
+        top_p=0.95,
+    )
+    return result.choices[0].message.content
+
+
+def parse_recommendation(raw: str) -> dict | None:
+    """Parse the JSON model output. Returns the dict or None on failure."""
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def format_recommendation(data: dict) -> str:
+    """Turn a parsed recommendation dict into user-facing markdown."""
+    title = data.get("recommended_movie", "Unknown")
+    year = data.get("year", "")
+    why = data.get("why", "")
+    mentioned = data.get("user_mentioned_movies", [])
+
+    output = f"## {title} ({year})\n\n"
+    output += f"**Why:** {why}\n\n"
+    if mentioned:
+        output += f"*Based on your mention of: {', '.join(mentioned)}*"
+    return output
+
+
 def recommend_movie(
     mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended,
     hf_token: gr.OAuthToken = None,
@@ -103,10 +141,10 @@ def recommend_movie(
     if hf_token is not None:
         token = hf_token.token
     else:
-        token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        token = os.getenv("HF_TOKEN")
 
     if not token:
-        raise gr.Error("No HuggingFace token found. Please log in or set HUGGINGFACEHUB_API_TOKEN in .env")
+        raise gr.Error("No HuggingFace token found. Please log in or set HF_TOKEN in .env")
 
     user_answers = {
         "mood": mood,
@@ -118,37 +156,12 @@ def recommend_movie(
     }
 
     messages = build_messages(user_answers)
+    raw = call_llm(messages, token)
+    data = parse_recommendation(raw)
 
-    client = InferenceClient(
-        provider="together",
-        token=token,
-        model="Qwen/Qwen2.5-7B-Instruct",
-    )
-
-    result = client.chat_completion(
-        messages,
-        max_tokens=256,
-        temperature=0.02,
-        top_p=0.95,
-    )
-
-    raw = result.choices[0].message.content
-
-    # Try to parse the JSON response
-    try:
-        data = json.loads(raw)
-        title = data.get("recommended_movie", "Unknown")
-        year = data.get("year", "")
-        why = data.get("why", "")
-        mentioned = data.get("user_mentioned_movies", [])
-
-        output = f"## 🎬 {title} ({year})\n\n"
-        output += f"**Why:** {why}\n\n"
-        if mentioned:
-            output += f"*Based on your mention of: {', '.join(mentioned)}*"
-        return output
-    except json.JSONDecodeError:
-        return f"**Model response:**\n\n{raw}"
+    if data is not None:
+        return format_recommendation(data)
+    return f"**Model response:**\n\n{raw}"
 
 
 # ── Gradio UI ─────────────────────────────────────────────────────────
@@ -159,53 +172,58 @@ GENRE_CHOICES = [
     "Mystery", "Romance", "Sci-Fi", "Thriller", "Western",
 ]
 
-with gr.Blocks(title="Movie Mood Recommender") as demo:
-    gr.Markdown("# Movie Mood Recommender\n"
-                "Tell us how you're feeling and we'll find the perfect movie.")
 
-    with gr.Sidebar():
-        gr.LoginButton()
+def create_demo():
+    with gr.Blocks(title="Movie Mood Recommender") as demo:
+        gr.Markdown("# Movie Mood Recommender\n"
+                    "Tell us how you're feeling and we'll find the perfect movie.")
 
-    with gr.Row():
-        with gr.Column():
-            mood = gr.Textbox(
-                label="What mood are you in?",
-                placeholder="e.g. happy, sad, adventurous, scary, chill…",
-            )
-            genres = gr.CheckboxGroup(
-                choices=GENRE_CHOICES,
-                label="Pick one or more genres",
-            )
-            pace = gr.Radio(
-                choices=["slow", "medium", "fast"],
-                label="Preferred pace",
-                value="medium",
-            )
-            spectacle_vs_story = gr.Radio(
-                choices=["spectacle", "balanced", "story"],
-                label="Spectacle vs. Story",
-                value="balanced",
-            )
-            familiar_vs_new = gr.Radio(
-                choices=["familiar", "no preference", "new"],
-                label="Something familiar or something new?",
-                value="no preference",
-            )
-            open_ended = gr.Textbox(
-                label="Anything else? (optional)",
-                placeholder="Mention movies you like, themes, actors, etc.",
-                lines=3,
-            )
-            submit_btn = gr.Button("Get Recommendation", variant="primary")
+        with gr.Sidebar():
+            gr.LoginButton()
 
-        with gr.Column():
-            output = gr.Markdown(label="Your Recommendation")
+        with gr.Row():
+            with gr.Column():
+                mood = gr.Textbox(
+                    label="What mood are you in?",
+                    placeholder="e.g. happy, sad, adventurous, scary, chill…",
+                )
+                genres = gr.CheckboxGroup(
+                    choices=GENRE_CHOICES,
+                    label="Pick one or more genres",
+                )
+                pace = gr.Radio(
+                    choices=["slow", "medium", "fast"],
+                    label="Preferred pace",
+                    value="medium",
+                )
+                spectacle_vs_story = gr.Radio(
+                    choices=["spectacle", "balanced", "story"],
+                    label="Spectacle vs. Story",
+                    value="balanced",
+                )
+                familiar_vs_new = gr.Radio(
+                    choices=["familiar", "no preference", "new"],
+                    label="Something familiar or something new?",
+                    value="no preference",
+                )
+                open_ended = gr.Textbox(
+                    label="Anything else? (optional)",
+                    placeholder="Mention movies you like, themes, actors, etc.",
+                    lines=3,
+                )
+                submit_btn = gr.Button("Get Recommendation", variant="primary")
 
-    submit_btn.click(
-        fn=recommend_movie,
-        inputs=[mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended],
-        outputs=output,
-    )
+            with gr.Column():
+                output = gr.Markdown(label="Your Recommendation")
+
+        submit_btn.click(
+            fn=recommend_movie,
+            inputs=[mood, genres, pace, spectacle_vs_story, familiar_vs_new, open_ended],
+            outputs=output,
+        )
+    return demo
+
 
 if __name__ == "__main__":
+    demo = create_demo()
     demo.launch()
